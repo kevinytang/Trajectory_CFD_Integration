@@ -1,0 +1,29 @@
+# Constant, Design, and Output Parameters:
+
+# Global Attributes:
+
+# Main geometry
+IMPORT    075_70deg.STEP   -1   0
+SELECT body
+    ATTRIBUTE _name $blunt
+    ATTRIBUTE capsAIM $fun3dAIM;su2AIM;egadsTessAIM;aflr4AIM;pointwiseAIM;tetgenAIM;aflr3AIM
+    ATTRIBUTE capsMesh $blunt
+    ATTRIBUTE capsMeshLength 0.25
+
+SELECT face # Add this block to tag all faces of the main geometry
+    ATTRIBUTE capsGroup $blunt
+
+# Farfield
+SPHERE 0 0 0 20
+    ATTRIBUTE _name $Farfield
+    ATTRIBUTE capsAIM $fun3dAIM;su2AIM;egadsTessAIM;aflr4AIM;pointwiseAIM;tetgenAIM;aflr3AIM
+    ATTRIBUTE capsMesh $Farfield
+    ATTRIBUTE AFLR_GBC $FARFIELD_UG3_GBC
+    ATTRIBUTE capsMeshLength 0.25
+    ATTRIBUTE .tParam "1.;1.;1;"
+
+SELECT face # Add this block to tag all farfield faces
+    ATTRIBUTE capsGroup $Farfield
+
+
+END
