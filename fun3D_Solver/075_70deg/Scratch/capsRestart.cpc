@@ -1,0 +1,26 @@
+# /home/kevinytang/Trajectory_CFD_Integration/fun3D_Solver/075_70deg/Scratch/capsRestart.cpc written by ocsmSave (v1.28)
+
+# Constant, Design, and Output Parameters:
+
+# Global Attributes:
+
+# Branches:
+IMPORT    075_70deg.STEP   -1   0
+SELECT    body
+ATTRIBUTE _name   $blunt
+ATTRIBUTE capsAIM   $fun3dAIM;su2AIM;egadsTessAIM;aflr4AIM;pointwiseAIM;tetgenAIM;aflr3AIM
+ATTRIBUTE capsMesh   $blunt
+ATTRIBUTE capsMeshLength   0.25
+SELECT    face
+ATTRIBUTE capsGroup   $blunt
+SPHERE    0   0   0   20
+ATTRIBUTE _name   $Farfield
+ATTRIBUTE capsAIM   $fun3dAIM;su2AIM;egadsTessAIM;aflr4AIM;pointwiseAIM;tetgenAIM;aflr3AIM
+ATTRIBUTE capsMesh   $Farfield
+ATTRIBUTE AFLR_GBC   $FARFIELD_UG3_GBC
+ATTRIBUTE capsMeshLength   0.25
+ATTRIBUTE .tParam   1.;1.;1;
+SELECT    face
+ATTRIBUTE capsGroup   $Farfield
+
+END

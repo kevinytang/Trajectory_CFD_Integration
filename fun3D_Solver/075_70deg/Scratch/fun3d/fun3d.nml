@@ -1,0 +1,56 @@
+&project
+    project_rootname = '075_70deg'
+/
+
+&raw_grid
+    grid_format = 'AFLR3'
+    data_format = 'stream'
+/
+
+&nonlinear_solver_parameters
+    schedule_cfl = 0.1, 10.0
+    schedule_iteration = 1, 300
+/
+
+&code_run_control
+    steps = 300
+    restart_read = 'off'
+/
+
+&boundary_conditions
+/
+&reference_physical_properties
+  dim_input_type = 'nondimensional'
+  temperature_units = 'Kelvin'
+  gridlength_conversion = 1.0
+  mach_number = 0.16487636142804474
+  temperature = 268.2710876464844
+  angle_of_attack = -46.333055772489914
+  angle_of_yaw = 0.0
+/
+
+&governing_equations
+  eqn_type = 'cal_perf_compress'
+  viscous_terms = 'inviscid'
+/
+
+&inviscid_flux_method
+  flux_construction = 'dldfss'
+  flux_limiter = 'hvanalbada'
+  first_order_iterations = 100
+  freeze_limiter_iteration = 200
+/
+
+&nonlinear_solver_parameters
+  schedule_iteration = 1 300
+  schedule_cfl = 0.1 10.0
+/
+
+&force_moment_integ_properties
+  area_reference = 12.566370614359172
+/
+
+&linear_solver_control
+  linear_projection = .true.
+/
+
