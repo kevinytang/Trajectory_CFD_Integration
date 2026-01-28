@@ -17,8 +17,8 @@ params = f90nml.read("../config.nml")
 cfdvar = f90nml.read("cfd_control.nml")
 
 # Add access to each sections
-traj = params["trajectory_input"]
-cfd  = params["cfd_input"]
+traj = params["current_states"]
+cfd  = params["cfd_variables"]
 var  = cfdvar["cfd_var"]
 
 #######################################

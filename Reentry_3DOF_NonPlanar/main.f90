@@ -1,8 +1,9 @@
 !> Non-Planar 3-DOF Reentry Trajectory Propagator
 !> Author: Kevin Tang
 program ReentryNonPlanar3DOF
+    !==================== Declaration of Variables ====================
     use, intrinsic :: iso_fortran_env, only: dp => real64
-    use mod_atmosphere, only: EarthAtmNASA
+    use mod_atmosphere, only: EarthAtmNASA, EarthAtmNRLMSISE
     use mod_gravity, only: EarthPointMass
     implicit none
 
@@ -42,16 +43,41 @@ program ReentryNonPlanar3DOF
     ! Declare vars that match the namelist
     real(dp) :: step, time, V, gamma, psi, alt, lon, lat, Cl, Cd
     real(dp) :: Mach, temperature, Alpha
-    namelist /trajectory_input/ step, time, V, gamma, psi, alt, lon, lat, Cl, Cd
-    namelist /cfd_input/ Mach, temperature, Alpha
+    namelist /current_states/ step, time, V, gamma, psi, alt, lon, lat, Cl, Cd
+    namelist /cfd_variables/ Mach, temperature, Alpha
+
+    ! Atmosphere model selection and NRLMSISE-00 parameters
+    integer :: atm_model ! 1 = NASA, 2 = NRLMSISE-00
+    integer :: iyd ! Year and day as YYDDD (e.g., 25172 = day 172 of 2025)
+    real(dp) :: sec_ut ! UT seconds of day
+    real(dp) :: f107a ! 81-day average F10.7 solar flux
+    real(dp) :: f107 ! Daily F10.7 solar flux (previous day)
+    real(dp) :: ap ! Geomagnetic Ap index
+    namelist /atmosphere_input/ atm_model, iyd, sec_ut, f107a, f107, ap
+
+    ! Initial conditions (read-only, preserved for reference)
+    real(dp) :: v0, gamma0, psi0, alt0, lon0, lat0
+    namelist /initial_conditions/ v0, gamma0, psi0, alt0, lon0, lat0
+
+    ! Control settings (read-only, preserved for reference)
+    real(dp) :: t_step, t_end_ctrl, tol
+    namelist /control_settings/ t_step, t_end_ctrl, tol
+
+    ! Current UT time tracker (updated each timestep)
+    real(dp) :: current_sec_ut
 
     ! Read namelist once at startup
     integer :: iu, ios
     open(newunit=iu, file='../config.nml', status='old', action='read', iostat=ios)
     if (ios /= 0) stop 'FATAL: cannot open ../config.nml'
-    read(iu, nml=trajectory_input, iostat=ios)
+    read(iu, nml=initial_conditions, iostat=ios)
+    read(iu, nml=control_settings, iostat=ios)
+    read(iu, nml=current_states, iostat=ios)
+    read(iu, nml=atmosphere_input, iostat=ios)
     close(iu)
-    if (ios /= 0) stop 'FATAL: error reading namelist /trajectory_input/'
+    if (ios /= 0) stop 'FATAL: error reading namelist /current_states/'
+
+    !=============================== Main Body ===============================
 
     ! Initialize your state from the namelist vars
     state(1) = V
@@ -62,16 +88,26 @@ program ReentryNonPlanar3DOF
     state(6) = lat   * deg2rad
     t = t0
 
+    ! Initialize current UT time
+    current_sec_ut = sec_ut
+
     ! Main integration loop
     i = 0
     do while (t < tend .and. state(4) > 0.0_dp)
 
         ! Re-read Cl/Cd each step
-        L_D = Cl / Cd ! lift-to-drag ratio
-        beta_param = m / (Cd * Aref) ! ballistic coefficient m/(Cd*A)
+        if (Cd > 0.0_dp) then
+            L_D = Cl / Cd
+            beta_param = m / (Cd * Aref)
+        else
+            L_D = 0.0_dp ! Initial state
+            beta_param = 1.0e10_dp  ! Very large = no drag (freefall)
+        end if
 
-        ! Environment
-        call EarthAtmNASA(state(4), Temp, P, rho, a)
+        ! Get atmospheric properties based on the selected model
+        call get_atmosphere(state(4), state(6)*rad2deg, state(5)*rad2deg, &
+                           Temp, P, rho, a)
+        ! Get gravity
         g   = EarthPointMass(state(4))
 
         ! Propagate one step (pass L/D & beta so CFD can drop in later)
@@ -83,13 +119,22 @@ program ReentryNonPlanar3DOF
         t = t + dt
         i = i + 1
 
+        ! Update UT time for next iteration (sec_ut advances with simulation time)
+        current_sec_ut = current_sec_ut + dt
+
+        ! Handle day rollover (86400 seconds in a day)
+        if (current_sec_ut >= 86400.0_dp) then
+            current_sec_ut = current_sec_ut - 86400.0_dp
+            iyd = iyd + 1  ! Increment day (simplified - doesn't handle year rollover)
+        end if
+
     end do
 
     ! Update the state variables
-    V       = state(1)
+    V  = state(1)
     gamma = state(2) * rad2deg
     psi= state(3) * rad2deg
-    alt     = state(4)
+    alt = state(4)
     lon = state(5) * rad2deg
     lat  = state(6) * rad2deg
 
@@ -102,14 +147,41 @@ program ReentryNonPlanar3DOF
     step = step + 1.0_dp
     time = time + tend
 
+    ! Update sec_ut to reflect propagation
+    sec_ut = current_sec_ut
+
     open(newunit=iu, file='../config.nml', status='replace', action='write', iostat=ios)
     if (ios /= 0) stop 'FATAL: cannot open for writing'
-    write(iu, nml=trajectory_input)
-    write(iu, nml=cfd_input)
-
-close(iu)
+    write(iu, nml=initial_conditions)
+    write(iu, nml=control_settings)
+    write(iu, nml=current_states)
+    write(iu, nml=cfd_variables)
+    write(iu, nml=atmosphere_input)
+    close(iu)
 
 contains
+
+    !================================= Subroutines =================================
+    subroutine get_atmosphere(alt_m, lat_deg, lon_deg, T_out, P_out, rho_out, a_out)
+        implicit none
+        real(dp), intent(in) :: alt_m, lat_deg, lon_deg
+        real(dp), intent(out) :: T_out, P_out, rho_out, a_out
+
+        real(dp):: T_K
+
+        if (atm_model == 1) then
+            ! NASA model
+            call EarthAtmNASA(alt_m, T_out, P_out, rho_out, a_out)
+
+        else
+            ! NRLMSISE-00 model
+            call EarthAtmNRLMSISE(iyd, current_sec_ut, alt_m, lat_deg, lon_deg, &
+                                  f107a, f107, ap, rho_out, T_K, P_out, a_out)
+            T_out = T_K - 273.15_dp ! Convert K to C
+
+        end if
+
+    end subroutine get_atmosphere
 
     subroutine rk4_nonplanar(t, state_in, state_out, dt, rho, g, m, beta, L_D, &
                              T_thrust, epsilon, sigma, REar, omega)
@@ -125,21 +197,26 @@ contains
 
         state_t = state_in + 0.5_dp * k1
         h_t = state_t(4)
-        call EarthAtmNASA(h_t, dummy1, dummy2, rho_t, dummy3)
+        call get_atmosphere(h_t, state_t(6)*rad2deg, state_t(5)*rad2deg, &
+                    dummy1, dummy2, rho_t, dummy3)
         g_t   = EarthPointMass(h_t)
-        call fun_nonplanar(t + 0.5_dp*dt, state_t, k2, rho_t, g_t, m, beta, L_D, T_thrust, epsilon, sigma, REar, omega)
+        call fun_nonplanar(t + 0.5_dp*dt, state_t, k2, rho_t, g_t, m, beta, L_D, T_thrust, epsilon, sigma, &
+        REar, omega)
         k2 = dt * k2
 
         state_t = state_in + 0.5_dp * k2
         h_t = state_t(4)
-        call EarthAtmNASA(h_t, dummy1, dummy2, rho_t, dummy3)
+        call get_atmosphere(h_t, state_t(6)*rad2deg, state_t(5)*rad2deg, &
+                    dummy1, dummy2, rho_t, dummy3)
         g_t   = EarthPointMass(h_t)
-        call fun_nonplanar(t + 0.5_dp*dt, state_t, k3, rho_t, g_t, m, beta, L_D, T_thrust, epsilon, sigma, REar, omega)
+        call fun_nonplanar(t + 0.5_dp*dt, state_t, k3, rho_t, g_t, m, beta, L_D, T_thrust, epsilon, sigma, &
+        REar, omega)
         k3 = dt * k3
 
         state_t = state_in + k3
         h_t = state_t(4)
-        call EarthAtmNASA(h_t, dummy1, dummy2, rho_t, dummy3)
+        call get_atmosphere(h_t, state_t(6)*rad2deg, state_t(5)*rad2deg, &
+                    dummy1, dummy2, rho_t, dummy3)
         g_t   = EarthPointMass(h_t)
         call fun_nonplanar(t + dt, state_t, k4, rho_t, g_t, m, beta, L_D, T_thrust, epsilon, sigma, REar, omega)
         k4 = dt * k4

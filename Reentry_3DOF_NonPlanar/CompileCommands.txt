@@ -1,1 +1,21 @@
+NASA_Atm_Mod: 
 gfortran -O2 -Wall mod_atmosphere.f90 mod_gravity.f90 main.f90 -o reentry.exe
+
+NRLMSIS module: 
+# Step 1: Compile NRLMSISE-00 F77 code (requires legacy flags)
+gfortran -c -O2 -std=legacy -fno-range-check -w nrlmsise00_sub.for
+
+# Step 2: Compile F90 modules (order matters - dependencies first)
+gfortran -c -O2 mod_atmosphere.f90
+gfortran -c -O2 mod_gravity.f90
+
+# Step 3: Compile main program
+gfortran -c -O2 main.f90
+
+# Step 4: Link all object files
+gfortran -O2 mod_atmosphere.o mod_gravity.o main.o nrlmsise00_sub.o -o reentry.exe
+
+# Or a one-liner
+gfortran -O2 -std=legacy -fno-range-check -w mod_atmosphere.f90 mod_gravity.f90 main.f90 nrlmsise00_sub.for -o reentry.exe
+
+

@@ -29,8 +29,8 @@ def readNML(CFG):
     params = f90nml.read(CFG)
 
     # Add access to each sections
-    traj = params["trajectory_input"]
-    cfd = params["cfd_input"]
+    traj = params["current_states"]
+    cfd = params["cfd_variables"]
 
     # Update each variables
     step = traj["step"]
@@ -60,8 +60,8 @@ def writeNML(CFG, step, time, v, gamma, psi, alt, lon, lat, cl, cd, mach, temper
     params = f90nml.read(CFG)
 
     # Add access to each sections
-    traj = params["trajectory_input"]
-    cfd = params["cfd_input"]
+    traj = params["current_states"]
+    cfd = params["cfd_variables"]
 
     # Update each variables
     traj["step"] = step
@@ -119,58 +119,6 @@ def writeCSV(HIST, step, time, v, gamma, psi, alt, lon, lat, cl, cd, mach, tempe
 
     return data
 
-
-def earth_atm_nasa(alt_m, velocity = None):
-    """
-    Earth Standard Atmosphere model (NASA)
-    ------------------------------------------------------------
-    Computes temperature [°C], pressure [kPa], density [kg/m³],
-    and speed of sound [m/s] at a given geometric altitude [m].
-    Optionally computes Mach number if velocity [m/s] is given.
-
-    Reference:
-        https://www.grc.nasa.gov/www/k-12/airplane/atmosmet.html
-    """
-
-    # Constants
-    T_ref = 273.15  # Reference temperature [K]
-    gamma = 1.4  # Ratio of specific heats
-    R = 287.0  # Specific gas constant [J/kg/K]
-
-    # Determine temperature and pressure by layer
-    if alt_m > 25000.0:
-        # Upper stratosphere
-        T_C = -131.21 + 0.00299 * alt_m
-        P_kPa = 2.488 * ((T_C + 273.1) / 216.6) ** (-11.388)
-
-    elif 11000.0 <= alt_m <= 25000.0:
-        # Lower stratosphere
-        T_C = -56.46
-        P_kPa = 22.65 * math.exp(1.73 - 0.000157 * alt_m)
-
-    else:
-        # Troposphere
-        T_C = 15.04 - 0.00649 * alt_m
-        P_kPa = 101.29 * ((T_C + 273.1) / 288.08) ** 5.256
-
-    # Speed of sound (CPG assumption)
-    T_K = T_C + T_ref
-    a = math.sqrt(gamma * R * T_K)
-
-    # Density
-    rho = P_kPa / (0.2869 * (T_C + 273.1))
-
-    result = {
-        "T_K": T_K,
-        "T_C": T_C
-    }
-
-    # Optional Mach number
-    if velocity is not None:
-        result["Mach"] = velocity / a
-
-    return result
-
 ########################################
 ##         Initial Variables          ##
 ########################################
@@ -180,30 +128,34 @@ RUNCFD= Path("fun3D_Solver/run_075_70deg.py")
 TRAJ  = Path("Reentry_3DOF_NonPlanar/reentry.exe")
 HIST = Path("history.csv")
 
+# Read all settings from config.nml
+params = f90nml.read(CFG)
+
+# Initial conditions
+init = params["initial_conditions"]
+v = init["v0"]
+gamma = init["gamma0"]
+psi = init["psi0"]
+alt = init["alt0"]
+lon = init["lon0"]
+lat = init["lat0"]
+
+# Control settings
+ctrl = params["control_settings"]
+t_step = ctrl["t_step"]
+t_end = ctrl["t_end_ctrl"]
+tol = ctrl["tol"] # Percent difference threshold to call CFD
+
 # Initial condition
 step = 0
 time = 0
-v = 11032.05312 # velocity [m/s]
-gamma = -6.48 # flight path angle [deg]
-psi = 39.82 # heading angle [deg]
-alt = 121920 # altitude [m]
-lon = 171.96 # longitude [deg]
-lat = -3.19 # latitude [deg]
 
-# Initial derived quantity for CFD
-atm = earth_atm_nasa(alt, velocity=v)
-temperature = atm["T_K"]
-mach = atm["Mach"]
-alpha = gamma
-
-# Placeholder for aerodynamic coefficients (will be updated after CFD)
-cl = 0 # lift coefficient
-cd = 0 # drag coefficient
-
-# Propagator control
-t_step = 5 # time of each step for the propagator (also change "t_end" in fortran code for consistency)
-t_end = 540 # total simulation time
-tol = 10 # threshold on calling CFD in percent
+# Placeholders (will be computed by Fortran after first run)
+cl = 0.0
+cd = 0.0
+mach = 0.0
+temperature = 0.0
+alpha = gamma  # Initial angle of attack = flight path angle
 
 ########################################
 ##       Write the Initial Input      ##
@@ -214,7 +166,13 @@ writeNML(CFG, step, time, v, gamma, psi, alt, lon, lat, cl, cd, mach, temperatur
 ##         Running Propagation        ##
 ########################################
 
-# Run CFD first to get the coefficients
+# Run trajectory propagator ONCE with one timestep to compute initial Mach & Temperature
+subprocess.run(['./' + TRAJ.name], cwd=TRAJ.parent)
+
+# Read back the computed Mach and Temperature
+state = readNML(CFG)
+
+# Run CFD ONCE to get the coefficients
 subprocess.run(["python", RUNCFD.name], cwd=RUNCFD.parent)
 
 # Record CFD input and write the initial state to the csv file
