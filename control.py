@@ -155,7 +155,7 @@ cl = 0.0
 cd = 0.0
 mach = 0.0
 temperature = 0.0
-alpha = gamma  # Initial angle of attack = flight path angle
+alpha = 0  # Initial angle of attack
 
 ########################################
 ##       Write the Initial Input      ##
@@ -189,6 +189,15 @@ while time < t_end:
 
     # Get the current state
     state = readNML(CFG)
+
+    # Check if altitude is negative (ground impact) - ADD THIS
+    if state["alt"] <= 0:
+        print(f"[LANDED] t={state['time']:.1f}s | alt={state['alt']:.1f}m")
+        writeCSV(HIST, state["step"], state["time"], state["v"], state["gamma"],
+                 state["psi"], state["alt"], state["lon"], state["lat"],
+                 state["cl"], state["cd"], state["mach"], state["temperature"],
+                 state["alpha"])
+        break  # Exit the loop
 
     # Read the CFD inputs from the namelist file and find the percent difference
     CFD_input_new = np.array([state["mach"], state["temperature"], state["alpha"]])
