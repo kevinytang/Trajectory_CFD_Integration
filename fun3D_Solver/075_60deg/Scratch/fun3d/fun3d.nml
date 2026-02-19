@@ -13,7 +13,7 @@
 /
 
 &code_run_control
-    steps = 1800
+    steps = 1
     restart_read = 'off'
 /
 
@@ -23,9 +23,9 @@
   dim_input_type = 'nondimensional'
   temperature_units = 'Kelvin'
   gridlength_conversion = 1.0
-  mach_number = 0.2662503271309134
-  temperature = 295.7166748046875
-  angle_of_attack = 0.0
+  mach_number = 23.335875882774566
+  temperature = 276.64044189453125
+  angle_of_attack = 30.0
   angle_of_yaw = 0.0
 /
 

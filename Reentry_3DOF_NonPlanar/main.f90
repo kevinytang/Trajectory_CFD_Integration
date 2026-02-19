@@ -16,11 +16,6 @@ program ReentryNonPlanar3DOF
     real(dp), parameter :: dt = (tend - t0) / steps
     integer :: i
 
-    ! Vehicle parameters
-    real(dp), parameter :: m    = 2000.0_dp ! [kg]
-    real(dp), parameter :: Aref = 12.566_dp ! [m^2]
-    real(dp), parameter :: Lref = 4_dp ! [m] [...] for now. Use higher fidelity model later
-
     ! Thrust parameters (set to zero for ballistic reentry)
     real(dp), parameter :: T_thrust = 0.0_dp
     real(dp), parameter :: epsilon  = 0.0_dp
@@ -40,10 +35,24 @@ program ReentryNonPlanar3DOF
     real(dp), parameter :: rad2deg = 180.0_dp / 3.14159265359_dp
     real(dp) :: g, L_D, beta_param ! L/D and ballistic coef
 
-    ! Declare vars that match the namelist
+    ! Initial conditions (read-only, preserved for reference)
+    real(dp) :: v0, gamma0, psi0, alt0, lon0, lat0, alpha0
+    namelist /initial_conditions/ v0, gamma0, psi0, alt0, lon0, lat0, alpha0
+
+    ! Vehicle parameters
+    real(dp) :: m, Aref, Lref
+    namelist /vehicle_param/ m, Aref, Lref
+
+    ! Control settings (read-only, preserved for reference)
+    real(dp) :: t_step, t_end_ctrl, tol
+    namelist /control_settings/ t_step, t_end_ctrl, tol
+
+    ! Current states
     real(dp) :: step, time, V, gamma, psi, alt, lon, lat, Cl, Cd
-    real(dp) :: Mach, temperature, Alpha
     namelist /current_states/ step, time, V, gamma, psi, alt, lon, lat, Cl, Cd
+
+    ! Cfd control variables
+    real(dp) :: Mach, temperature, Alpha
     namelist /cfd_variables/ Mach, temperature, Alpha
 
     ! Atmosphere model selection and NRLMSISE-00 parameters
@@ -55,14 +64,6 @@ program ReentryNonPlanar3DOF
     real(dp) :: ap ! Geomagnetic Ap index
     namelist /atmosphere_input/ atm_model, iyd, sec_ut, f107a, f107, ap
 
-    ! Initial conditions (read-only, preserved for reference)
-    real(dp) :: v0, gamma0, psi0, alt0, lon0, lat0
-    namelist /initial_conditions/ v0, gamma0, psi0, alt0, lon0, lat0
-
-    ! Control settings (read-only, preserved for reference)
-    real(dp) :: t_step, t_end_ctrl, tol
-    namelist /control_settings/ t_step, t_end_ctrl, tol
-
     ! Current UT time tracker (updated each timestep)
     real(dp) :: current_sec_ut
 
@@ -71,15 +72,17 @@ program ReentryNonPlanar3DOF
     open(newunit=iu, file='../config.nml', status='old', action='read', iostat=ios)
     if (ios /= 0) stop 'FATAL: cannot open ../config.nml'
     read(iu, nml=initial_conditions, iostat=ios)
+    read(iu, nml=vehicle_param, iostat=ios)
     read(iu, nml=control_settings, iostat=ios)
     read(iu, nml=current_states, iostat=ios)
+    read(iu, nml=cfd_variables, iostat=ios)
     read(iu, nml=atmosphere_input, iostat=ios)
     close(iu)
     if (ios /= 0) stop 'FATAL: error reading namelist /current_states/'
 
     !=============================== Main Body ===============================
 
-    ! Initialize your state from the namelist vars
+    ! Initialize state from the namelist vars
     state(1) = V
     state(2) = gamma * deg2rad
     state(3) = psi   * deg2rad
@@ -141,7 +144,6 @@ program ReentryNonPlanar3DOF
     ! Update the cfd variables
     Mach = state(1) / a
     temperature = Temp + 273.15_dp
-    Alpha = 0 ! 0 for ballistic entry
 
     ! Update step and time
     step = step + 1.0_dp
@@ -153,6 +155,7 @@ program ReentryNonPlanar3DOF
     open(newunit=iu, file='../config.nml', status='replace', action='write', iostat=ios)
     if (ios /= 0) stop 'FATAL: cannot open for writing'
     write(iu, nml=initial_conditions)
+    write(iu, nml=vehicle_param)
     write(iu, nml=control_settings)
     write(iu, nml=current_states)
     write(iu, nml=cfd_variables)

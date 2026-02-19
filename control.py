@@ -139,6 +139,7 @@ psi = init["psi0"]
 alt = init["alt0"]
 lon = init["lon0"]
 lat = init["lat0"]
+alpha = init["alpha0"]
 
 # Control settings
 ctrl = params["control_settings"]
@@ -155,7 +156,6 @@ cl = 0.0
 cd = 0.0
 mach = 0.0
 temperature = 0.0
-alpha = 0  # Initial angle of attack
 
 ########################################
 ##       Write the Initial Input      ##
