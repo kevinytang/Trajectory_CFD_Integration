@@ -141,7 +141,7 @@ program ReentryNonPlanar3DOF
     ! Update the cfd variables
     Mach = state(1) / a
     temperature = Temp + 273.15_dp
-    Alpha = Alpha ! 0 for ballistic entry
+    Alpha = 0 ! 0 for ballistic entry
 
     ! Update step and time
     step = step + 1.0_dp

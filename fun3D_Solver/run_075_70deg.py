@@ -24,9 +24,9 @@ var  = cfdvar["cfd_var"]
 #######################################
 ##        Build Geometry             ##
 #######################################
-filename = "075_70deg.csm"
+filename = "075_45deg.csm"
 print(f'\n==> Loading geometry from file "{filename}"...')
-capsProblem = pyCAPS.Problem(problemName="075_70deg",
+capsProblem = pyCAPS.Problem(problemName="075_60deg",
                              capsFile=filename,
                              outLevel=1)
 
