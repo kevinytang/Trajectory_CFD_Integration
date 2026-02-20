@@ -24,9 +24,11 @@ var  = cfdvar["cfd_var"]
 #######################################
 ##        Build Geometry             ##
 #######################################
-filename = "075_45deg.csm"
-print(f'\n==> Loading geometry from file "{filename}"...')
-capsProblem = pyCAPS.Problem(problemName="075_60deg",
+# Import file name
+filename = '075_45deg.csm'
+
+# Initialize problem
+capsProblem = pyCAPS.Problem(problemName="reentryCFD",
                              capsFile=filename,
                              outLevel=1)
 
@@ -210,10 +212,9 @@ if os.path.exists(force_file):
 
 # Update the namelist
 if CL is not None and CD is not None:
-    traj["cl"] = CL
-    traj["cd"] = CD
+    params_fresh = f90nml.read("../config.nml")   # re-read current state
+    params_fresh["current_states"]["cl"] = CL
+    params_fresh["current_states"]["cd"] = CD
     with open("../config.nml", "w") as f:
-        f90nml.write(params, f)
+        f90nml.write(params_fresh, f)
     print("Updated ../config.nml with CL/CD.")
-else:
-    print("WARNING: Could not extract CL/CD from .forces file.")

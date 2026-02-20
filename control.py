@@ -33,20 +33,20 @@ def readNML(CFG):
     cfd = params["cfd_variables"]
 
     # Update each variables
-    step = traj["step"]
-    time = traj["time"]
-    v = traj["v"]
-    gamma = traj["gamma"]
-    psi = traj["psi"]
-    alt = traj["alt"]
-    lon = traj["lon"]
-    lat = traj["lat"]
-    cl = traj["cl"]
-    cd = traj["cd"]
+    step = traj.get("step")
+    time = traj.get("time")
+    v = traj.get("v")
+    gamma = traj.get("gamma")
+    psi = traj.get("psi")
+    alt = traj.get("alt")
+    lon = traj.get("lon")
+    lat = traj.get("lat")
+    cl = traj.get("cl")
+    cd = traj.get("cd")
 
-    mach = cfd["mach"]
-    temperature = cfd["temperature"]
-    alpha = cfd["alpha"]
+    mach = cfd.get("mach")
+    temperature = cfd.get("temperature")
+    alpha = cfd.get("alpha")
 
     return {
         "step": step, "time": time, "v": v, "gamma": gamma, "psi": psi, "alt": alt, "lon": lon, "lat": lat,
