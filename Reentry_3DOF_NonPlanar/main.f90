@@ -52,8 +52,8 @@ program ReentryNonPlanar3DOF
     namelist /current_states/ step, time, V, gamma, psi, alt, lon, lat, Cl, Cd
 
     ! Cfd control variables
-    real(dp) :: mach, temperature, alpha
-    namelist /cfd_variables/ mach, temperature, alpha
+    real(dp) :: mach, temperature, pressure, density, alpha
+    namelist /cfd_variables/ mach, temperature, pressure, density, alpha
 
     ! Atmosphere model selection and NRLMSISE-00 parameters
     integer :: atm_model ! 1 = NASA, 2 = NRLMSISE-00
@@ -144,6 +144,8 @@ program ReentryNonPlanar3DOF
     ! Update the cfd variables
     mach = state(1) / a
     temperature = Temp + 273.15_dp
+    pressure = P
+    density = rho
 
     ! Update step and time
     step = step + 1.0_dp

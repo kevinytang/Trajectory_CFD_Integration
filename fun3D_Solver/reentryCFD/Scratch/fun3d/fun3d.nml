@@ -23,8 +23,8 @@
   dim_input_type = 'nondimensional'
   temperature_units = 'Kelvin'
   gridlength_conversion = 1.0
-  mach_number = 22.75806815823737
-  temperature = 285.7492980957031
+  mach_number = 23.35676043287669
+  temperature = 276.40167236328125
   angle_of_attack = 30.0
   angle_of_yaw = 0.0
 /

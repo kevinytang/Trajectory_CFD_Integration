@@ -15,7 +15,7 @@
  Beta = 0.0,
  Equation_Type = "cal_perf_compress",
  Viscous = "inviscid",
- Num_Iter = 1800,
+ Num_Iter = 1,
  CFL_Schedule = 0.1, 10.0,
  CFL_Schedule_Iter = 1, 1800,
  Restart_Read = "off",

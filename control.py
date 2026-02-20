@@ -46,15 +46,18 @@ def readNML(CFG):
 
     mach = cfd.get("mach")
     temperature = cfd.get("temperature")
+    pressure = cfd.get("pressure")
+    density = cfd.get("density")
     alpha = cfd.get("alpha")
 
     return {
         "step": step, "time": time, "v": v, "gamma": gamma, "psi": psi, "alt": alt, "lon": lon, "lat": lat,
-        "cl": cl, "cd": cd, "mach": mach, "temperature": temperature, "alpha": alpha
+        "cl": cl, "cd": cd, "mach": mach, "temperature": temperature, "pressure": pressure, "density": density,
+        "alpha": alpha
     }
 
 # Write to the namelist
-def writeNML(CFG, step, time, v, gamma, psi, alt, lon, lat, cl, cd, mach, temperature, alpha):
+def writeNML(CFG, step, time, v, gamma, psi, alt, lon, lat, cl, cd, mach, temperature, pressure, density, alpha):
 
     # Get files
     params = f90nml.read(CFG)
@@ -77,6 +80,8 @@ def writeNML(CFG, step, time, v, gamma, psi, alt, lon, lat, cl, cd, mach, temper
 
     cfd["mach"] = mach
     cfd["temperature"] = temperature
+    cfd["pressure"] = pressure
+    cfd["density"] = density
     cfd["alpha"] = alpha
 
     # Write the initial condition
@@ -86,11 +91,11 @@ def writeNML(CFG, step, time, v, gamma, psi, alt, lon, lat, cl, cd, mach, temper
     return params
 
 # Write to csv file
-def writeCSV(HIST, step, time, v, gamma, psi, alt, lon, lat, cl, cd, mach, temperature, alpha):
+def writeCSV(HIST, step, time, v, gamma, psi, alt, lon, lat, cl, cd, mach, temperature, pressure, density, alpha):
 
     # Define fieldnames once
     fieldnames = ["step", "time", "v", "gamma", "psi", "alt", "lon", "lat", "cl", "cd", "mach", "temperature",
-                  "alpha"]
+                  "pressure", "density", "alpha"]
 
     # Data in one row
     data = {
@@ -106,6 +111,8 @@ def writeCSV(HIST, step, time, v, gamma, psi, alt, lon, lat, cl, cd, mach, tempe
         "cd": cd,
         "mach": mach,
         "temperature": temperature,
+        "pressure": pressure,
+        "density": density,
         "alpha": alpha
     }
 
@@ -156,11 +163,13 @@ cl = 0.0
 cd = 0.0
 mach = 0.0
 temperature = 0.0
+pressure = 0.0
+density = 0.0
 
 ########################################
 ##       Write the Initial Input      ##
 ########################################
-writeNML(CFG, step, time, v, gamma, psi, alt, lon, lat, cl, cd, mach, temperature, alpha)
+writeNML(CFG, step, time, v, gamma, psi, alt, lon, lat, cl, cd, mach, temperature, pressure, density, alpha)
 
 ########################################
 ##         Running Propagation        ##
@@ -179,7 +188,8 @@ subprocess.run(["python", RUNCFD.name], cwd=RUNCFD.parent)
 state = readNML(CFG)
 CFD_input = np.array([state["mach"], state["temperature"], state["alpha"]])
 writeCSV(HIST, state["step"], state["time"], state["v"], state["gamma"], state["psi"], state["alt"], state["lon"],
-         state["lat"], state["cl"], state["cd"], state["mach"], state["temperature"], state["alpha"])
+         state["lat"], state["cl"], state["cd"], state["mach"], state["temperature"], state["pressure"],
+         state["density"], state["alpha"])
 
 # While loop
 while time < t_end:
@@ -196,7 +206,7 @@ while time < t_end:
         writeCSV(HIST, state["step"], state["time"], state["v"], state["gamma"],
                  state["psi"], state["alt"], state["lon"], state["lat"],
                  state["cl"], state["cd"], state["mach"], state["temperature"],
-                 state["alpha"])
+                 state["pressure"], state["density"], state["alpha"])
         break  # Exit the loop
 
     # Read the CFD inputs from the namelist file and find the percent difference
@@ -218,7 +228,8 @@ while time < t_end:
 
     # Write the current state to the csv file
     writeCSV(HIST, state["step"], state["time"], state["v"], state["gamma"], state["psi"], state["alt"], state["lon"],
-             state["lat"], state["cl"], state["cd"], state["mach"], state["temperature"], state["alpha"])
+             state["lat"], state["cl"], state["cd"], state["mach"], state["temperature"], state["pressure"],
+             state["density"], state["alpha"])
 
     # Update and prepare for the next loop
     step = step + 1
