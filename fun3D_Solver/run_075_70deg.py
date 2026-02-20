@@ -25,7 +25,7 @@ var  = cfdvar["cfd_var"]
 ##        Build Geometry             ##
 #######################################
 # Import file name
-filename = '075_45deg.csm'
+filename = var["filename"]
 
 # Initialize problem
 capsProblem = pyCAPS.Problem(problemName="reentryCFD",
