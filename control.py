@@ -1,8 +1,16 @@
-
 """
 Coupled Trajectory CFD Controller
 ==========================================================
 Author: Kevin Tang
+
+Usage (single manual run — original behaviour):
+  cd Trajectory_CFD_Integration/
+  python control.py
+
+Usage (pipeline / multi-case run):
+  python control.py --workdir runs/case_001 --config runs/case_001/config.nml \\
+                    --mesh-dir fun3d_meshes/cone_59deg
+
 Instructions:
 1. Check if all the paths are correct.
 2. Adjust input parameters as needed.
@@ -11,229 +19,207 @@ Instructions:
 5. Use the virtual environment (.venv) in the current directory.
 """
 
+import argparse
 import csv
-import subprocess
-import f90nml
 import math
-import numpy as np
+import subprocess
+import sys
 from pathlib import Path
+
+import f90nml
+import numpy as np
 
 ########################################
 ##         Helper Functions           ##
 ########################################
 
-# Read from the namelist
 def readNML(CFG):
-
-    # Get files
     params = f90nml.read(CFG)
-
-    # Add access to each sections
     traj = params["current_states"]
-    cfd = params["cfd_variables"]
-
-    # Update each variables
-    step = traj.get("step")
-    time = traj.get("time")
-    v = traj.get("v")
-    gamma = traj.get("gamma")
-    psi = traj.get("psi")
-    alt = traj.get("alt")
-    lon = traj.get("lon")
-    lat = traj.get("lat")
-    cl = traj.get("cl")
-    cd = traj.get("cd")
-
-    mach = cfd.get("mach")
-    temperature = cfd.get("temperature")
-    pressure = cfd.get("pressure")
-    density = cfd.get("density")
-    alpha = cfd.get("alpha")
-
+    cfd  = params["cfd_variables"]
     return {
-        "step": step, "time": time, "v": v, "gamma": gamma, "psi": psi, "alt": alt, "lon": lon, "lat": lat,
-        "cl": cl, "cd": cd, "mach": mach, "temperature": temperature, "pressure": pressure, "density": density,
-        "alpha": alpha
+        "step":        traj.get("step"),
+        "time":        traj.get("time"),
+        "v":           traj.get("v"),
+        "gamma":       traj.get("gamma"),
+        "psi":         traj.get("psi"),
+        "alt":         traj.get("alt"),
+        "lon":         traj.get("lon"),
+        "lat":         traj.get("lat"),
+        "cl":          traj.get("cl"),
+        "cd":          traj.get("cd"),
+        "mach":        cfd.get("mach"),
+        "temperature": cfd.get("temperature"),
+        "pressure":    cfd.get("pressure"),
+        "density":     cfd.get("density"),
+        "alpha":       cfd.get("alpha"),
     }
 
-# Write to the namelist
-def writeNML(CFG, step, time, v, gamma, psi, alt, lon, lat, cl, cd, mach, temperature, pressure, density, alpha):
 
-    # Get files
+def writeNML(CFG, step, time, v, gamma, psi, alt, lon, lat,
+             cl, cd, mach, temperature, pressure, density, alpha):
     params = f90nml.read(CFG)
+    traj   = params["current_states"]
+    cfd    = params["cfd_variables"]
 
-    # Add access to each sections
-    traj = params["current_states"]
-    cfd = params["cfd_variables"]
+    traj["step"] = step;  traj["time"]  = time
+    traj["v"]    = v;     traj["gamma"] = gamma;  traj["psi"] = psi
+    traj["alt"]  = alt;   traj["lon"]   = lon;    traj["lat"] = lat
+    traj["cl"]   = cl;    traj["cd"]    = cd
 
-    # Update each variables
-    traj["step"] = step
-    traj["time"] = time
-    traj["v"] = v
-    traj["gamma"] = gamma
-    traj["psi"] = psi
-    traj["alt"] = alt
-    traj["lon"] = lon
-    traj["lat"] = lat
-    traj["cl"] = cl
-    traj["cd"] = cd
-
-    cfd["mach"] = mach
+    cfd["mach"]        = mach
     cfd["temperature"] = temperature
-    cfd["pressure"] = pressure
-    cfd["density"] = density
-    cfd["alpha"] = alpha
+    cfd["pressure"]    = pressure
+    cfd["density"]     = density
+    cfd["alpha"]       = alpha
 
-    # Write the initial condition
     with open(CFG, "w") as f:
         f90nml.write(params, f)
-
     return params
 
-# Write to csv file
-def writeCSV(HIST, step, time, v, gamma, psi, alt, lon, lat, cl, cd, mach, temperature, pressure, density, alpha):
 
-    # Define fieldnames once
-    fieldnames = ["step", "time", "v", "gamma", "psi", "alt", "lon", "lat", "cl", "cd", "mach", "temperature",
-                  "pressure", "density", "alpha"]
-
-    # Data in one row
+def writeCSV(HIST, step, time, v, gamma, psi, alt, lon, lat,
+             cl, cd, mach, temperature, pressure, density, alpha):
+    fieldnames = ["step", "time", "v", "gamma", "psi", "alt", "lon", "lat",
+                  "cl", "cd", "mach", "temperature", "pressure", "density", "alpha"]
     data = {
-        "step": step,
-        "time": time,
-        "v": v,
-        "gamma": gamma,
-        "psi": psi,
-        "alt": alt,
-        "lon": lon,
-        "lat": lat,
-        "cl": cl,
-        "cd": cd,
-        "mach": mach,
-        "temperature": temperature,
-        "pressure": pressure,
-        "density": density,
-        "alpha": alpha
+        "step": step, "time": time, "v": v, "gamma": gamma, "psi": psi,
+        "alt": alt, "lon": lon, "lat": lat, "cl": cl, "cd": cd,
+        "mach": mach, "temperature": temperature, "pressure": pressure,
+        "density": density, "alpha": alpha,
     }
-
-    # Write the data
     write_header = not HIST.exists()
-    with open(HIST, "a", newline = "") as f:
+    with open(HIST, "a", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         if write_header:
             writer.writeheader()
         writer.writerow(data)
-
     return data
 
-########################################
-##         Initial Variables          ##
-########################################
-# Paths (adjust to your folder layout)
-CFG   = Path("config.nml")
-RUNCFD= Path("fun3D_Solver/run_075_70deg.py")
-TRAJ  = Path("Reentry_3DOF_NonPlanar/reentry.exe")
-HIST = Path("history.csv")
-
-# Read all settings from config.nml
-params = f90nml.read(CFG)
-
-# Initial conditions
-init = params["initial_conditions"]
-v = init["v0"]
-gamma = init["gamma0"]
-psi = init["psi0"]
-alt = init["alt0"]
-lon = init["lon0"]
-lat = init["lat0"]
-alpha = init["alpha0"]
-
-# Control settings
-ctrl = params["control_settings"]
-t_step = ctrl["t_step"]
-t_end = ctrl["t_end_ctrl"]
-tol = ctrl["tol"] # Percent difference threshold to call CFD
-
-# Initial condition
-step = 0
-time = 0
-
-# Placeholders (will be computed by Fortran after first run)
-cl = 0.0
-cd = 0.0
-mach = 0.0
-temperature = 0.0
-pressure = 0.0
-density = 0.0
 
 ########################################
-##       Write the Initial Input      ##
-########################################
-writeNML(CFG, step, time, v, gamma, psi, alt, lon, lat, cl, cd, mach, temperature, pressure, density, alpha)
-
-########################################
-##         Running Propagation        ##
+##         CLI argument parsing       ##
 ########################################
 
-# Run trajectory propagator ONCE with one timestep to compute initial Mach & Temperature
-subprocess.run(['./' + TRAJ.name], cwd=TRAJ.parent)
+def _parse_args():
+    parser = argparse.ArgumentParser(description="Coupled Trajectory-CFD Controller")
+    parser.add_argument("--workdir",  default=None,
+                        help="Working directory for this run (default: script's directory). "
+                             "All relative paths are resolved from here.")
+    parser.add_argument("--config",   default=None,
+                        help="Path to config.nml (default: <workdir>/config.nml)")
+    parser.add_argument("--mesh-dir", default=None,
+                        help="Path to pre-built FUN3D mesh directory. "
+                             "Passed through to run_fun3d.py to skip mesh generation.")
+    return parser.parse_args()
 
-# Read back the computed Mach and Temperature
-state = readNML(CFG)
 
-# Run CFD ONCE to get the coefficients
-subprocess.run(["python", RUNCFD.name], cwd=RUNCFD.parent)
+########################################
+##         Main execution             ##
+########################################
 
-# Record CFD input and write the initial state to the csv file
-state = readNML(CFG)
-CFD_input = np.array([state["mach"], state["temperature"], state["alpha"]])
-writeCSV(HIST, state["step"], state["time"], state["v"], state["gamma"], state["psi"], state["alt"], state["lon"],
-         state["lat"], state["cl"], state["cd"], state["mach"], state["temperature"], state["pressure"],
-         state["density"], state["alpha"])
+def main():
+    args = _parse_args()
 
-# While loop
-while time < t_end:
+    # ── Resolve working directory ────────────────────────────────────────────
+    script_dir = Path(__file__).parent.resolve()
+    workdir    = Path(args.workdir).resolve() if args.workdir else script_dir
+    workdir.mkdir(parents=True, exist_ok=True)
 
-    # Run the trajectory propagator for n seconds
-    subprocess.run(['./' + TRAJ.name], cwd=TRAJ.parent)
+    # ── Resolve file paths relative to workdir ───────────────────────────────
+    CFG    = Path(args.config).resolve() if args.config else workdir / "config.nml"
+    HIST   = workdir / "history.csv"
 
-    # Get the current state
+    # Trajectory executable and CFD script are always relative to the submodule dir
+    TRAJ   = script_dir / "Reentry_3DOF_NonPlanar" / "reentry.exe"
+    RUNCFD = script_dir / "fun3D_Solver" / "run_fun3d.py"
+
+    # Mesh directory for FUN3D (optional — enables mesh reuse)
+    mesh_dir = Path(args.mesh_dir).resolve() if args.mesh_dir else None
+
+    print(f"[control] workdir  : {workdir}")
+    print(f"[control] config   : {CFG}")
+    print(f"[control] mesh-dir : {mesh_dir or 'None (mesh will be generated)'}")
+
+    if not CFG.exists():
+        print(f"[control] ERROR: config.nml not found at {CFG}", file=sys.stderr)
+        sys.exit(1)
+
+    # ── Read all settings from config.nml ───────────────────────────────────
+    params = f90nml.read(CFG)
+
+    init  = params["initial_conditions"]
+    v     = init["v0"];    gamma = init["gamma0"]; psi   = init["psi0"]
+    alt   = init["alt0"];  lon   = init["lon0"];   lat   = init["lat0"]
+    alpha = init["alpha0"]
+
+    ctrl   = params["control_settings"]
+    t_step = ctrl["t_step"]
+    t_end  = ctrl["t_end_ctrl"]
+    tol    = ctrl["tol"]
+
+    step = 0;  time = 0
+    cl = cd = mach = temperature = pressure = density = 0.0
+
+    # Build CFD subprocess command
+    cfd_cmd = ["python", str(RUNCFD), "--config", str(CFG)]
+    if mesh_dir:
+        cfd_cmd += ["--mesh-dir", str(mesh_dir)]
+
+    # ── Write initial namelist state ─────────────────────────────────────────
+    writeNML(CFG, step, time, v, gamma, psi, alt, lon, lat,
+             cl, cd, mach, temperature, pressure, density, alpha)
+
+    # ── Initial trajectory step → compute Mach / Temperature ─────────────────
+    subprocess.run(["./" + TRAJ.name], cwd=TRAJ.parent, check=True)
     state = readNML(CFG)
 
-    # Check if altitude is negative (ground impact) - ADD THIS
-    if state["alt"] <= 0:
-        print(f"[LANDED] t={state['time']:.1f}s | alt={state['alt']:.1f}m")
+    # ── Initial CFD run → get first Cl/Cd ───────────────────────────────────
+    subprocess.run(cfd_cmd, check=True)
+    state      = readNML(CFG)
+    CFD_input  = np.array([state["mach"], state["temperature"], state["alpha"]])
+
+    writeCSV(HIST, state["step"], state["time"], state["v"], state["gamma"],
+             state["psi"], state["alt"], state["lon"], state["lat"],
+             state["cl"], state["cd"], state["mach"], state["temperature"],
+             state["pressure"], state["density"], state["alpha"])
+
+    # ── Main propagation loop ─────────────────────────────────────────────────
+    while time < t_end:
+
+        subprocess.run(["./" + TRAJ.name], cwd=TRAJ.parent, check=True)
+        state = readNML(CFG)
+
+        if state["alt"] <= 0:
+            print(f"[LANDED] t={state['time']:.1f}s | alt={state['alt']:.1f}m")
+            writeCSV(HIST, state["step"], state["time"], state["v"], state["gamma"],
+                     state["psi"], state["alt"], state["lon"], state["lat"],
+                     state["cl"], state["cd"], state["mach"], state["temperature"],
+                     state["pressure"], state["density"], state["alpha"])
+            break
+
+        CFD_input_new = np.array([state["mach"], state["temperature"], state["alpha"]])
+        denom         = np.where(CFD_input != 0, CFD_input, 1)
+        per_diff      = np.abs(CFD_input_new - CFD_input) / denom * 100
+        outside_tol   = per_diff > tol
+
+        if np.any(outside_tol):
+            subprocess.run(cfd_cmd, check=True)
+            CFD_input = CFD_input_new
+
         writeCSV(HIST, state["step"], state["time"], state["v"], state["gamma"],
                  state["psi"], state["alt"], state["lon"], state["lat"],
                  state["cl"], state["cd"], state["mach"], state["temperature"],
                  state["pressure"], state["density"], state["alpha"])
-        break  # Exit the loop
 
-    # Read the CFD inputs from the namelist file and find the percent difference
-    CFD_input_new = np.array([state["mach"], state["temperature"], state["alpha"]])
-    denom = np.where(CFD_input != 0, CFD_input, 1) # guard against 0
-    per_diff = np.abs(CFD_input_new - CFD_input) / denom * 100
+        step += 1
+        time += t_step
 
-    # Boolean flag: check if any percent difference exceed the tol
-    outside_tol = per_diff > tol
+        print(f"[Step {int(state['step']):04d}] t={state['time']:.1f}s | "
+              f"max ΔCFD={np.max(per_diff):.2f}% | CFD re-run={np.any(outside_tol)}")
 
-    # If: CFD inputs are too different from the last recorded input
-    if np.any(outside_tol):
+    print(f"[control] Done. History written to {HIST}")
 
-        # Run CFD again to update Cl and Cd
-        subprocess.run(["python", RUNCFD.name], cwd=RUNCFD.parent)
 
-        # Save the CFD input for future reference
-        CFD_input = CFD_input_new
-
-    # Write the current state to the csv file
-    writeCSV(HIST, state["step"], state["time"], state["v"], state["gamma"], state["psi"], state["alt"], state["lon"],
-             state["lat"], state["cl"], state["cd"], state["mach"], state["temperature"], state["pressure"],
-             state["density"], state["alpha"])
-
-    # Update and prepare for the next loop
-    step = step + 1
-    time = time + t_step
-
-    # Output CFD re-run
-    print(f"[Step {int(state['step']):04d}] t={state['time']:.1f}s | max ΔCFD={np.max(per_diff):.2f}% | CFD re-run={np.any(outside_tol)}")
+if __name__ == "__main__":
+    main()
