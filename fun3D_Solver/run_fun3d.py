@@ -7,9 +7,11 @@ Reads trajectory state from config.nml, configures FUN3D for inviscid
 hypersonic flow, runs the solver, and writes updated CL/CD back to config.nml.
 
 Mesh reuse:
-  If --mesh-dir is provided and contains a mesh_ready.flag, the AFLR4/AFLR3
-  mesh generation steps are skipped and the pre-built mesh is loaded directly.
-  This avoids regenerating the FUN3D 3D volume mesh on every CFD call.
+  If --mesh-dir is provided and contains a mesh_ready.flag, the presence of
+  pre-built mesh files is verified (sanity check only).  The AFLR4/AFLR3 AIMs
+  always run through pyCAPS, but pyCAPS phaseContinuation (default) skips the
+  actual mesh generation on subsequent calls when inputs are unchanged, making
+  it fast.
 
   NOTE: The FUN3D 3D volume mesh is completely separate from the FEAR 2D Gmsh
   mesh.  Do not confuse the two.
@@ -25,7 +27,6 @@ Usage:
 
 import argparse
 import os
-import shutil
 import sys
 from pathlib import Path
 
@@ -46,8 +47,8 @@ def _parse_args():
                         help="Path to config.nml "
                              "(default: ../config.nml relative to this script)")
     parser.add_argument("--mesh-dir", default=None,
-                        help="Pre-built FUN3D mesh directory. "
-                             "If valid and mesh_ready.flag exists, skip AFLR4/AFLR3.")
+                        help="Pre-built FUN3D mesh directory (sanity check only). "
+                             "pyCAPS phaseContinuation handles mesh caching internally.")
     return parser.parse_args()
 
 
@@ -73,15 +74,20 @@ def main():
     cfd  = params["cfd_variables"]
     var  = cfdvar["cfd_var"]
 
-    # ── Determine mesh mode ──────────────────────────────────────────────────
-    mesh_dir   = Path(args.mesh_dir).resolve() if args.mesh_dir else None
-    reuse_mesh = (mesh_dir is not None and
-                  (mesh_dir / FLAG_FILE).exists())
-
-    if reuse_mesh:
-        print(f"[run_fun3d] Reusing pre-built FUN3D mesh from {mesh_dir}")
-    else:
-        print("[run_fun3d] Generating FUN3D mesh (AFLR4 + AFLR3)")
+    # ── Sanity-check pre-built mesh dir (informational only) ─────────────────
+    mesh_dir = Path(args.mesh_dir).resolve() if args.mesh_dir else None
+    if mesh_dir is not None:
+        flag_ok = (mesh_dir / FLAG_FILE).exists()
+        ugrid_ok = any(
+            e.name.endswith((".b8.ugrid", ".lb8.ugrid")) and e.is_file()
+            for e in os.scandir(mesh_dir)
+        ) if flag_ok else False
+        if flag_ok and ugrid_ok:
+            print(f"[run_fun3d] Pre-built mesh verified at {mesh_dir} "
+                  f"(pyCAPS phaseContinuation will reuse checkpoint)")
+        else:
+            print(f"[run_fun3d] WARNING: --mesh-dir {mesh_dir} missing flag or ugrid; "
+                  f"will regenerate mesh via AFLR4+AFLR3")
 
     # ── pyCAPS problem name: unique per case to avoid collisions ─────────────
     # Derive a unique suffix from the config path so parallel runs don't clash
@@ -94,56 +100,41 @@ def main():
         print(f"[run_fun3d] ERROR: CSM file not found: {csm_path}", file=sys.stderr)
         sys.exit(1)
 
+    # ── EGADS resolves IMPORT paths relative to process cwd ──────────────────
+    # Must chdir to cfd_dir before Problem creation and keep it through all
+    # runAnalysis() calls.  Restore afterwards.
+    orig_dir = Path.cwd()
+    os.chdir(cfd_dir)
+
     caps_prob = pyCAPS.Problem(problemName=prob_name,
                                capsFile=str(csm_path),
                                outLevel=1)
 
-    if reuse_mesh:
-        # ── Load pre-built mesh directly ─────────────────────────────────────
-        # Link a dummy AFLR3 AIM that reads the existing .b8.ugrid
-        aflr3_name = "aflr3"
-        aflr3 = caps_prob.analysis.create(aim="aflr3AIM", name=aflr3_name)
+    # ── Build mesh (AFLR4 surface + AFLR3 volume) ─────────────────────────────
+    # phaseContinuation (default) skips recomputation when inputs are unchanged,
+    # so this is fast on subsequent calls with identical geometry/settings.
+    aflr4 = caps_prob.analysis.create(aim="aflr4AIM", name="aflr4")
+    aflr4.input.Mesh_Length_Factor = var.get("Mesh_Length_Factor")
+    aflr4.input.max_scale          = var.get("max_scale")
+    aflr4.input.ideal_min_scale    = var.get("min_scale")
+    aflr4.input.ff_cdfr            = var.get("ff_cdfr")
+    aflr4.input.Mesh_Sizing = {
+        "blunt":    {"edgeWeight":  var.get("edgeWeight"),
+                     "scaleFactor": var.get("blunt_scaleFactor")},
+        "Farfield": {"bcType":      "Farfield",
+                     "scaleFactor": var.get("farfield_scaleFactor")},
+    }
+    print("==> Running AFLR4 …")
+    aflr4.runAnalysis()
 
-        # Use os.scandir to catch dotfile mesh outputs (e.g. ".b8.ugrid")
-        mesh_suffixes = (".b8.ugrid", ".lb8.ugrid", ".mapbc")
-        ugrid_files = [Path(e.path) for e in os.scandir(mesh_dir)
-                       if e.name.endswith((".b8.ugrid", ".lb8.ugrid")) and e.is_file()]
-        if not ugrid_files:
-            print(f"[run_fun3d] WARNING: No .b8.ugrid in {mesh_dir}; falling back to remesh")
-            reuse_mesh = False
-        else:
-            # Copy pre-built mesh into pyCAPS scratch dir so FUN3D AIM can find it
-            scratch = Path(aflr3.analysisDir)
-            scratch.mkdir(parents=True, exist_ok=True)
-            for entry in os.scandir(mesh_dir):
-                if entry.name.endswith(mesh_suffixes) and entry.is_file():
-                    shutil.copy2(entry.path, scratch / entry.name)
-            aflr3.runAnalysis()
-
-    if not reuse_mesh:
-        # ── Build mesh from scratch ───────────────────────────────────────────
-        aflr4 = caps_prob.analysis.create(aim="aflr4AIM", name="aflr4")
-        aflr4.input.Mesh_Length_Factor = var.get("Mesh_Length_Factor")
-        aflr4.input.max_scale          = var.get("max_scale")
-        aflr4.input.ideal_min_scale    = var.get("min_scale")
-        aflr4.input.ff_cdfr            = var.get("ff_cdfr")
-        aflr4.input.Mesh_Sizing = {
-            "blunt":    {"edgeWeight":  var.get("edgeWeight"),
-                         "scaleFactor": var.get("blunt_scaleFactor")},
-            "Farfield": {"bcType":      "Farfield",
-                         "scaleFactor": var.get("farfield_scaleFactor")},
-        }
-        print("==> Running AFLR4 …")
-        aflr4.runAnalysis()
-
-        aflr3 = caps_prob.analysis.create(aim="aflr3AIM", name="aflr3")
-        aflr3.input["Surface_Mesh"].link(aflr4.output["Surface_Mesh"])
-        aflr3.input.Mesh_Sizing = {
-            "blunt":    {"bcType": "Inviscid"},
-            "Farfield": {"bcType": "Farfield"},
-        }
-        print("==> Running AFLR3 …")
-        aflr3.runAnalysis()
+    aflr3 = caps_prob.analysis.create(aim="aflr3AIM", name="aflr3")
+    aflr3.input["Surface_Mesh"].link(aflr4.output["Surface_Mesh"])
+    aflr3.input.Mesh_Sizing = {
+        "blunt":    {"bcType": "Inviscid"},
+        "Farfield": {"bcType": "Farfield"},
+    }
+    print("==> Running AFLR3 …")
+    aflr3.runAnalysis()
 
     # ── FUN3D AIM ────────────────────────────────────────────────────────────
     print("==> Configuring FUN3D AIM …")
@@ -248,6 +239,8 @@ def main():
         print(f"[run_fun3d] CL={CL:.6f}  CD={CD:.6f} → {config_path}")
     else:
         print(f"[run_fun3d] WARNING: Could not extract CL/CD from {force_file}")
+
+    os.chdir(orig_dir)
 
 
 if __name__ == "__main__":
