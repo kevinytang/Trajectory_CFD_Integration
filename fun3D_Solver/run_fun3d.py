@@ -206,7 +206,9 @@ def main():
         f.write("/\n\n")
 
     # ── Run FUN3D ────────────────────────────────────────────────────────────
-    nodet = var.get("nodet_Dir")
+    # FUN3D_NODET env var overrides nodet_Dir in cfd_control.nml (set by doe_pipeline.py
+    # from pipeline_config.yaml so the path is correct on each machine)
+    nodet = os.environ.get("FUN3D_NODET") or var.get("nodet_Dir")
     cmd   = (f"mpirun -np {nproc} {nodet} "
              f"--animation_freq -1 --volume_animation_freq -1")
     freeze = var.get("Freeze_Limiter")
