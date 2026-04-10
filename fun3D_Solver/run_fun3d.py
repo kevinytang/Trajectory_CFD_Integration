@@ -104,19 +104,20 @@ def main():
         aflr3_name = "aflr3"
         aflr3 = caps_prob.analysis.create(aim="aflr3AIM", name=aflr3_name)
 
-        ugrid_files = list(mesh_dir.glob("*.b8.ugrid")) + list(mesh_dir.glob("*.lb8.ugrid"))
+        # Use os.scandir to catch dotfile mesh outputs (e.g. ".b8.ugrid")
+        mesh_suffixes = (".b8.ugrid", ".lb8.ugrid", ".mapbc")
+        ugrid_files = [Path(e.path) for e in os.scandir(mesh_dir)
+                       if e.name.endswith((".b8.ugrid", ".lb8.ugrid")) and e.is_file()]
         if not ugrid_files:
             print(f"[run_fun3d] WARNING: No .b8.ugrid in {mesh_dir}; falling back to remesh")
             reuse_mesh = False
         else:
             # Copy pre-built mesh into pyCAPS scratch dir so FUN3D AIM can find it
-            scratch = Path(caps_prob.analysisDir(aflr3_name))
+            scratch = Path(aflr3.analysisDir)
             scratch.mkdir(parents=True, exist_ok=True)
-            for uf in ugrid_files:
-                shutil.copy2(uf, scratch / uf.name)
-            # Also copy .mapbc if present
-            for mf in mesh_dir.glob("*.mapbc"):
-                shutil.copy2(mf, scratch / mf.name)
+            for entry in os.scandir(mesh_dir):
+                if entry.name.endswith(mesh_suffixes) and entry.is_file():
+                    shutil.copy2(entry.path, scratch / entry.name)
             aflr3.runAnalysis()
 
     if not reuse_mesh:
