@@ -116,7 +116,7 @@ print("\n\nRunning FUN3D......")
 fun3d.preAnalysis()
 
 # Compute characteristic surface area for spherically blunted cone
-r = 2  # m
+r = 0.4  # m
 A_total = np.pi * r ** 2
 
 # Store the surface length
