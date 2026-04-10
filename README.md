@@ -31,8 +31,9 @@ A Python controller orchestrates trajectory propagation, CFD execution, and stat
 1. Check that all file and directory paths in `control.py` are correct.  
 2. Adjust input parameters in `config.nml` as needed.  
 3. Ensure `T_STEP` in `config.nml` matches the time stepping used in the Fortran trajectory code.  
-4. Enter the ESP shell environment before running the controller.  
-5. Activate the Python virtual environment (`.venv`) in the project directory.
+4. Enter the ESP shell environment before running the controller.
+5. Update the characteristic radius for blunt cone in run_075_70deg.py
+6. Activate the Python virtual environment (`.venv`) in the project directory.
 
 ---
 
