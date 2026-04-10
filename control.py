@@ -137,6 +137,12 @@ def main():
     # Mesh directory for FUN3D (optional — enables mesh reuse)
     mesh_dir = Path(args.mesh_dir).resolve() if args.mesh_dir else None
 
+    # reentry.exe opens '../config.nml' relative to its CWD (hardcoded in Fortran).
+    # Run it from workdir/reentry_work/ so that '../config.nml' resolves to
+    # workdir/config.nml (the case-specific config) rather than the submodule template.
+    reentry_workdir = workdir / "reentry_work"
+    reentry_workdir.mkdir(parents=True, exist_ok=True)
+
     print(f"[control] workdir  : {workdir}")
     print(f"[control] config   : {CFG}")
     print(f"[control] mesh-dir : {mesh_dir or 'None (mesh will be generated)'}")
@@ -171,7 +177,7 @@ def main():
              cl, cd, mach, temperature, pressure, density, alpha)
 
     # ── Initial trajectory step → compute Mach / Temperature ─────────────────
-    subprocess.run(["./" + TRAJ.name], cwd=TRAJ.parent, check=True)
+    subprocess.run([str(TRAJ)], cwd=str(reentry_workdir), check=True)
     state = readNML(CFG)
 
     # ── Initial CFD run → get first Cl/Cd ───────────────────────────────────
@@ -187,7 +193,7 @@ def main():
     # ── Main propagation loop ─────────────────────────────────────────────────
     while time < t_end:
 
-        subprocess.run(["./" + TRAJ.name], cwd=TRAJ.parent, check=True)
+        subprocess.run([str(TRAJ)], cwd=str(reentry_workdir), check=True)
         state = readNML(CFG)
 
         if state["alt"] <= 0:
